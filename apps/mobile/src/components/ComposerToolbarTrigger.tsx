@@ -145,6 +145,7 @@ export function ComposerToolbarButton(props: {
   readonly maxWidth?: number;
   readonly minWidth?: number;
   readonly onPress?: () => void;
+  readonly pressable?: boolean;
   readonly showChevron?: boolean;
   readonly textTransform?: "none" | "uppercase";
   readonly variant?: "default" | "primary" | "danger";
@@ -175,50 +176,47 @@ export function ComposerToolbarButton(props: {
         ? dangerFg
         : iconColor;
 
-  return (
-    <Pressable
-      accessibilityLabel={props.accessibilityLabel ?? props.label}
-      accessibilityRole="button"
-      disabled={props.disabled}
-      onPress={props.onPress}
-      className={cn(
-        // Default width cap lives in the class chain (not the inline style)
-        // so callers can lift it with max-w-full — flex-filling pills in the
-        // thread composer stretch to the row's edge. The numeric maxWidth
-        // prop still wins via the inline style below.
-        "h-11 max-w-[172px] flex-row items-center justify-center rounded-full active:opacity-70",
-        isCircle ? "w-11" : "gap-2 px-3.5",
-        variant === "primary"
-          ? props.disabled
-            ? "bg-subtle-strong"
-            : "bg-primary"
-          : variant === "danger"
-            ? "bg-danger"
-            : props.active
-              ? "bg-subtle-strong"
-              : "bg-subtle",
-        props.className,
-      )}
-      style={({ pressed }) => [
-        {
-          borderColor:
-            variant === "default"
-              ? props.active
-                ? activeBorderColor
-                : defaultBorderColor
-              : filledBorderColor,
-          borderWidth: 1,
-          maxWidth: props.maxWidth,
-          minWidth: props.minWidth,
-          opacity: props.disabled ? 0.55 : pressed ? 0.72 : 1,
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: isDarkMode ? 3 : 2 },
-          shadowOpacity: props.disabled ? 0 : isDarkMode ? 0.24 : 0.08,
-          shadowRadius: isDarkMode ? 10 : 8,
-        },
-        props.style,
-      ]}
-    >
+  const containerClassName = cn(
+    // Default width cap lives in the class chain (not the inline style)
+    // so callers can lift it with max-w-full — flex-filling pills in the
+    // thread composer stretch to the row's edge. The numeric maxWidth
+    // prop still wins via the inline style below.
+    "h-11 max-w-[172px] flex-row items-center justify-center rounded-full active:opacity-70",
+    isCircle ? "w-11" : "gap-2 px-3.5",
+    variant === "primary"
+      ? props.disabled
+        ? "bg-subtle-strong"
+        : "bg-primary"
+      : variant === "danger"
+        ? "bg-danger"
+        : props.active
+          ? "bg-subtle-strong"
+          : "bg-subtle",
+    props.className,
+  );
+
+  const containerStyle = (pressed: boolean): StyleProp<ViewStyle> => [
+    {
+      borderColor:
+        variant === "default"
+          ? props.active
+            ? activeBorderColor
+            : defaultBorderColor
+          : filledBorderColor,
+      borderWidth: 1,
+      maxWidth: props.maxWidth,
+      minWidth: props.minWidth,
+      opacity: props.disabled ? 0.55 : pressed ? 0.72 : 1,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: isDarkMode ? 3 : 2 },
+      shadowOpacity: props.disabled ? 0 : isDarkMode ? 0.24 : 0.08,
+      shadowRadius: isDarkMode ? 10 : 8,
+    },
+    props.style,
+  ];
+
+  const content = (
+    <>
       {props.iconNode ? (
         <View className="h-4 w-4 items-center justify-center">{props.iconNode}</View>
       ) : props.icon ? (
@@ -244,6 +242,32 @@ export function ComposerToolbarButton(props: {
       {props.showChevron === false ? null : (
         <SymbolView name="chevron.down" size={11} tintColor={iconTintColor} type="monochrome" />
       )}
+    </>
+  );
+
+  if (props.pressable === false) {
+    return (
+      <View
+        accessibilityLabel={props.accessibilityLabel ?? props.label}
+        accessibilityRole="button"
+        className={containerClassName}
+        style={containerStyle(false)}
+      >
+        {content}
+      </View>
+    );
+  }
+
+  return (
+    <Pressable
+      accessibilityLabel={props.accessibilityLabel ?? props.label}
+      accessibilityRole="button"
+      disabled={props.disabled}
+      onPress={props.onPress}
+      className={containerClassName}
+      style={({ pressed }) => containerStyle(pressed)}
+    >
+      {content}
     </Pressable>
   );
 }

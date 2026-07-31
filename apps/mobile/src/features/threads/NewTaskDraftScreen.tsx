@@ -22,7 +22,9 @@ import {
 } from "../../components/ComposerToolbarTrigger";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { ComposerAttachmentStrip } from "../../components/ComposerAttachmentStrip";
+import { GestureDetector } from "react-native-gesture-handler";
 import { ControlPill, ControlPillMenu } from "../../components/ControlPill";
+import { useModelArcPicker } from "../../components/ModelArcPicker";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ComposerSurface } from "./ThreadComposer";
 
@@ -538,30 +540,12 @@ export function NewTaskDraftScreen(props: {
     [flow.environments, flow.selectedEnvironmentId, isIncomingShareTransferPending],
   );
 
-  const modelMenuActions = useMemo(
-    () =>
-      flow.providerGroups.map((group) => ({
-        id: `provider:${group.providerKey}`,
-        title: group.providerLabel,
-        subtitle: group.models.find(
-          (model) =>
-            flow.selectedModel &&
-            model.selection.instanceId === flow.selectedModel.instanceId &&
-            model.selection.model === flow.selectedModel.model,
-        )?.label,
-        subactions: group.models.map((option) => ({
-          id: `model:${option.key}`,
-          title: option.label,
-          state:
-            flow.selectedModel &&
-            option.selection.instanceId === flow.selectedModel.instanceId &&
-            option.selection.model === flow.selectedModel.model
-              ? ("on" as const)
-              : undefined,
-        })),
-      })),
-    [flow.providerGroups, flow.selectedModel],
-  );
+  const modelPicker = useModelArcPicker({
+    options: flow.modelOptions,
+    selectedKey: flow.selectedModelOption?.key ?? null,
+    disabled: isIncomingShareTransferPending,
+    onSelect: (option) => flow.setSelectedModelKey(option.key),
+  });
   const providerOptionDescriptors = useMemo(
     () =>
       resolveProviderOptionDescriptors({
@@ -702,13 +686,6 @@ export function NewTaskDraftScreen(props: {
       }),
     [currentBranchName, flow.selectedBranchName, flow.workspaceMode],
   );
-  function handleModelMenuAction(event: string) {
-    if (isIncomingShareTransferPending || !event.startsWith("model:")) {
-      return;
-    }
-    flow.setSelectedModelKey(event.slice("model:".length));
-  }
-
   function handleEnvironmentMenuAction(event: string) {
     if (isIncomingShareTransferPending || !event.startsWith("environment:")) {
       return;
@@ -988,17 +965,17 @@ export function NewTaskDraftScreen(props: {
         showChevron={false}
         disabled={isIncomingShareTransferPending}
       />
-      <ControlPillMenu
-        actions={modelMenuActions}
-        onPressAction={({ nativeEvent }) => handleModelMenuAction(nativeEvent.event)}
-      >
+      <GestureDetector gesture={modelPicker.triggerGesture}>
         <ComposerToolbarTrigger
           accessibilityLabel="Model"
+          active={modelPicker.isOpen}
           disabled={isIncomingShareTransferPending}
           iconNode={<ProviderIcon provider={flow.selectedModelOption?.providerDriver} size={16} />}
           label={flow.selectedModelOption?.label ?? "Model"}
+          pressable={false}
+          showChevron={false}
         />
-      </ControlPillMenu>
+      </GestureDetector>
       <ControlPillMenu
         actions={optionsMenuActions}
         onPressAction={({ nativeEvent }) => handleOptionsMenuAction(nativeEvent.event)}
@@ -1048,6 +1025,12 @@ export function NewTaskDraftScreen(props: {
     />
   );
 
+  const modelPickerOverlay = modelPicker.isOpen ? (
+    <View className="absolute inset-x-4 bottom-full z-20 mb-2" style={{ height: 140 }}>
+      {modelPicker.element}
+    </View>
+  ) : null;
+
   if (isAndroid) {
     // The draft is a thread that doesn't exist yet, so it mirrors the thread
     // page: in-screen header, empty feed canvas above, and the same floating
@@ -1069,6 +1052,7 @@ export function NewTaskDraftScreen(props: {
                 : "linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(255,255,255,0.85) 40%, rgba(255,255,255,0.95) 100%)",
             }}
           >
+            {modelPickerOverlay}
             <ComposerSurface
               isDarkMode={isDarkMode}
               style={
@@ -1136,6 +1120,7 @@ export function NewTaskDraftScreen(props: {
         <View className="min-h-0 flex-1 px-5 pt-2">{promptEditor}</View>
 
         <View className="border-t border-border" style={{ paddingBottom: controlsBottomPadding }}>
+          {modelPickerOverlay}
           {flow.attachments.length > 0 ? (
             <View className="px-4 pt-3">
               <ComposerAttachmentStrip
