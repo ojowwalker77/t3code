@@ -1,5 +1,12 @@
 import * as Schema from "effect/Schema";
-import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  NonNegativeInt,
+  PositiveInt,
+  ProjectId,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
+import type { OrchestrationThreadShell } from "./orchestration.ts";
 import { SourceControlProviderError, SourceControlProviderInfo } from "./sourceControl.ts";
 import { VcsDriverKind } from "./vcs.ts";
 
@@ -163,6 +170,100 @@ export const VcsRemoveWorktreeInput = Schema.Struct({
   force: Schema.optional(Schema.Boolean),
 });
 export type VcsRemoveWorktreeInput = typeof VcsRemoveWorktreeInput.Type;
+
+export const WorktreeStorageStatus = Schema.Literals(["active", "clean", "dirty"]);
+export type WorktreeStorageStatus = typeof WorktreeStorageStatus.Type;
+
+export const WorktreeStorageEntry = Schema.Struct({
+  path: TrimmedNonEmptyStringSchema,
+  refName: TrimmedNonEmptyStringSchema,
+  sizeBytes: NonNegativeInt,
+  status: WorktreeStorageStatus,
+});
+export type WorktreeStorageEntry = typeof WorktreeStorageEntry.Type;
+
+export const WorktreeStorageProject = Schema.Struct({
+  projectId: ProjectId,
+  title: TrimmedNonEmptyStringSchema,
+  workspaceRoot: TrimmedNonEmptyStringSchema,
+  faviconPath: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  worktrees: Schema.Array(WorktreeStorageEntry),
+});
+export type WorktreeStorageProject = typeof WorktreeStorageProject.Type;
+
+export const WorktreeStoragePreviewInput = Schema.Struct({});
+export type WorktreeStoragePreviewInput = typeof WorktreeStoragePreviewInput.Type;
+
+export const WorktreeStoragePreviewResult = Schema.Struct({
+  totalSizeBytes: NonNegativeInt,
+  projects: Schema.Array(WorktreeStorageProject),
+});
+export type WorktreeStoragePreviewResult = typeof WorktreeStoragePreviewResult.Type;
+
+export function threadKeepsWorktreeActive(
+  thread: Pick<
+    OrchestrationThreadShell,
+    | "archivedAt"
+    | "settledOverride"
+    | "session"
+    | "latestTurn"
+    | "hasPendingApprovals"
+    | "hasPendingUserInput"
+    | "backgroundLiveness"
+  >,
+): boolean {
+  const hasLiveRuntime =
+    thread.session?.status === "starting" ||
+    thread.session?.status === "running" ||
+    thread.latestTurn?.state === "running" ||
+    thread.hasPendingApprovals ||
+    thread.hasPendingUserInput ||
+    thread.backgroundLiveness != null;
+
+  return hasLiveRuntime || (thread.archivedAt === null && thread.settledOverride !== "settled");
+}
+
+export const WorktreeCleanupTarget = Schema.Struct({
+  projectId: ProjectId,
+  path: TrimmedNonEmptyStringSchema,
+});
+export type WorktreeCleanupTarget = typeof WorktreeCleanupTarget.Type;
+
+const WorktreeCleanupTargets = Schema.Array(WorktreeCleanupTarget).check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(200),
+);
+const ConfirmedDirtyWorktreePaths = Schema.Array(TrimmedNonEmptyStringSchema).check(
+  Schema.isMaxLength(200),
+);
+
+export const WorktreeCleanupInput = Schema.Struct({
+  targets: WorktreeCleanupTargets,
+  confirmedDirtyPaths: Schema.optional(ConfirmedDirtyWorktreePaths),
+});
+export type WorktreeCleanupInput = typeof WorktreeCleanupInput.Type;
+
+export const WorktreeCleanupOutcomeStatus = Schema.Literals([
+  "removed",
+  "skipped_active",
+  "skipped_dirty",
+  "skipped_missing",
+  "failed",
+]);
+export type WorktreeCleanupOutcomeStatus = typeof WorktreeCleanupOutcomeStatus.Type;
+
+export const WorktreeCleanupOutcome = Schema.Struct({
+  projectId: ProjectId,
+  path: TrimmedNonEmptyStringSchema,
+  status: WorktreeCleanupOutcomeStatus,
+  detail: Schema.optional(Schema.String),
+});
+export type WorktreeCleanupOutcome = typeof WorktreeCleanupOutcome.Type;
+
+export const WorktreeCleanupResult = Schema.Struct({
+  outcomes: Schema.Array(WorktreeCleanupOutcome),
+});
+export type WorktreeCleanupResult = typeof WorktreeCleanupResult.Type;
 
 export const VcsCreateRefInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
@@ -365,6 +466,20 @@ export class GitManagerError extends Schema.TaggedErrorClass<GitManagerError>()(
 }) {
   override get message(): string {
     return `Git manager failed in ${this.operation}: ${this.detail}`;
+  }
+}
+
+export class WorktreeStorageError extends Schema.TaggedErrorClass<WorktreeStorageError>()(
+  "WorktreeStorageError",
+  {
+    operation: Schema.String,
+    detail: Schema.String,
+    path: Schema.optional(Schema.String),
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `Worktree storage failed in ${this.operation}: ${this.detail}`;
   }
 }
 

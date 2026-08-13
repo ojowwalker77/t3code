@@ -7,6 +7,9 @@ import {
   GitRunStackedActionResult,
   GitRunStackedActionInput,
   GitResolvePullRequestResult,
+  WorktreeCleanupInput,
+  WorktreeStoragePreviewResult,
+  threadKeepsWorktreeActive,
 } from "./git.ts";
 
 const decodeCreateWorktreeInput = Schema.decodeUnknownSync(VcsCreateWorktreeInput);
@@ -16,6 +19,8 @@ const decodePreparePullRequestThreadInput = Schema.decodeUnknownSync(
 const decodeRunStackedActionInput = Schema.decodeUnknownSync(GitRunStackedActionInput);
 const decodeRunStackedActionResult = Schema.decodeUnknownSync(GitRunStackedActionResult);
 const decodeResolvePullRequestResult = Schema.decodeUnknownSync(GitResolvePullRequestResult);
+const decodeWorktreeCleanupInput = Schema.decodeUnknownSync(WorktreeCleanupInput);
+const decodeWorktreeStoragePreviewResult = Schema.decodeUnknownSync(WorktreeStoragePreviewResult);
 
 describe("VcsCreateWorktreeInput", () => {
   it("accepts omitted newRefName for existing-refName worktrees", () => {
@@ -124,5 +129,92 @@ describe("GitRunStackedActionResult", () => {
     if (parsed.toast.cta.kind === "run_action") {
       expect(parsed.toast.cta.action.kind).toBe("create_pr");
     }
+  });
+});
+
+describe("worktree storage contracts", () => {
+  it("decodes grouped worktree size and safety metadata", () => {
+    const parsed = decodeWorktreeStoragePreviewResult({
+      totalSizeBytes: 1_024,
+      projects: [
+        {
+          projectId: "project-1",
+          title: "T3 Code",
+          workspaceRoot: "/repo",
+          faviconPath: null,
+          worktrees: [
+            {
+              path: "/worktrees/feature-a",
+              refName: "feature/a",
+              sizeBytes: 512,
+              status: "clean",
+            },
+            {
+              path: "/worktrees/feature-b",
+              refName: "feature/b",
+              sizeBytes: 512,
+              status: "dirty",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(parsed.projects[0]?.worktrees.map((worktree) => worktree.status)).toEqual([
+      "clean",
+      "dirty",
+    ]);
+  });
+
+  it("treats unsettled threads as keeping their worktree active", () => {
+    const base = {
+      archivedAt: null,
+      settledOverride: null,
+      session: null,
+      latestTurn: null,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      backgroundLiveness: null,
+    } as const;
+
+    expect(threadKeepsWorktreeActive(base)).toBe(true);
+    expect(threadKeepsWorktreeActive({ ...base, settledOverride: "settled" })).toBe(false);
+  });
+
+  it("keeps a worktree active while an archived thread still has a live runtime", () => {
+    const archived = {
+      archivedAt: "2026-08-12T00:00:00.000Z",
+      settledOverride: null,
+      session: null,
+      latestTurn: null,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      backgroundLiveness: null,
+    } as const;
+
+    expect(threadKeepsWorktreeActive(archived)).toBe(false);
+    expect(
+      threadKeepsWorktreeActive({
+        ...archived,
+        session: { status: "running" },
+      } as Parameters<typeof threadKeepsWorktreeActive>[0]),
+    ).toBe(true);
+    expect(
+      threadKeepsWorktreeActive({
+        ...archived,
+        latestTurn: { state: "running" },
+      } as Parameters<typeof threadKeepsWorktreeActive>[0]),
+    ).toBe(true);
+  });
+
+  it("requires explicit cleanup targets and carries separately confirmed dirty paths", () => {
+    const parsed = decodeWorktreeCleanupInput({
+      targets: [{ projectId: "project-1", path: "/worktrees/feature-b" }],
+      confirmedDirtyPaths: ["/worktrees/feature-b"],
+    });
+
+    expect(parsed.targets).toHaveLength(1);
+    expect(parsed.confirmedDirtyPaths).toEqual(["/worktrees/feature-b"]);
+    expect(() => decodeWorktreeCleanupInput({ targets: [] })).toThrow();
   });
 });
